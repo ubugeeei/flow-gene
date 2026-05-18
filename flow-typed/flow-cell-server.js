@@ -20,6 +20,7 @@ declare module "flow-cell/server" {
   declare export type NodeOptions = {
     +key?: string,
     +name?: string,
+    +serialize?: boolean,
   };
 
   declare export function cell<T>(initial: T, options?: NodeOptions): Cell<T>;
