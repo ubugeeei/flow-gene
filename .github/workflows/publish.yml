@@ -24,6 +24,9 @@ jobs:
           node-version: 24
           registry-url: "https://registry.npmjs.org"
 
+      - name: Enable Corepack
+        run: corepack enable
+
       - name: Verify tag matches package version
         run: |
           VERSION="$(node -p "require('./package.json').version")"
@@ -34,10 +37,10 @@ jobs:
           fi
 
       - name: Install dependencies
-        run: npm install
+        run: yarn install --immutable
 
       - name: Verify package
-        run: npm run verify
+        run: yarn verify
 
       - name: Publish to npm
         run: npm publish --provenance --access public

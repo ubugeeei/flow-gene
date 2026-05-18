@@ -2,7 +2,7 @@
   "name": "flow-gene",
   "version": "0.1.0",
   "description": "Experimental Flow typed GraphQL layer for React 19, built on top of flow-cell.",
-  "packageManager": "npm@11.12.1",
+  "packageManager": "yarn@4.14.1",
   "main": "./dist/FlowGene.js",
   "module": "./dist/FlowGene.mjs",
   "exports": {
@@ -35,7 +35,7 @@
     "prepare": "node Build.js",
     "smoke": "node Smoke.js",
     "test": "node Test.js",
-    "verify": "npm run flow && npm test && npm run build && npm run smoke"
+    "verify": "yarn flow && yarn test && yarn build && yarn smoke"
   },
   "keywords": [
     "flow",

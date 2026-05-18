@@ -118,8 +118,8 @@ createEnvironment({
 ## Scripts
 
 ```sh
-npm install
-npm run verify
+yarn install
+yarn verify
 ```
 
 ## Publishing
