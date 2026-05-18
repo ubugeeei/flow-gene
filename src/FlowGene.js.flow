@@ -95,6 +95,7 @@ export type Subscriber<TData, TVariables> = (
 export interface GeneStore {
   +cell: Cell<StoreSnapshot>;
   getSnapshot(): StoreSnapshot;
+  restore(snapshot: StoreSnapshot): void;
   hasOperation(operation: OperationDocument<any, any>, variables?: ?Variables): boolean;
   writeOperation<TData, TVariables>(
     operation: OperationDocument<TData, TVariables>,
@@ -106,6 +107,52 @@ export interface GeneStore {
     variables: TVariables,
   ): ?TData;
   readFragment<TData>(fragment: FragmentDocument<TData>, ref: mixed): TData;
+  writeFragment<TData>(fragment: FragmentDocument<TData>, ref: mixed, data: TData): void;
+  modify(id: string, fields: CacheModifyFields): boolean;
+  evict(id: string): boolean;
+}
+export type CacheReadQueryOptions<TData, TVariables = Variables> = {
+  +query: QueryDocument<TData, TVariables>,
+  +variables?: TVariables,
+};
+export type CacheWriteQueryOptions<TData, TVariables = Variables> = {
+  +query: QueryDocument<TData, TVariables>,
+  +variables?: TVariables,
+  +data: TData,
+};
+export type CacheReadFragmentOptions<TData> = {
+  +fragment: FragmentDocument<TData>,
+  +from: mixed,
+};
+export type CacheWriteFragmentOptions<TData> = {
+  +fragment: FragmentDocument<TData>,
+  +from: mixed,
+  +data: TData,
+};
+export type CacheModifyFunction = (value: mixed, record: NormalizedRecord) => mixed;
+export type CacheModifyFields = { +[string]: CacheModifyFunction };
+export type CacheModifyOptions = {
+  +id: string,
+  +fields: CacheModifyFields,
+};
+export type CacheEvictOptions = {
+  +id: string,
+};
+export type CacheWatchListener = (snapshot: StoreSnapshot) => mixed;
+export interface GeneCache {
+  readQuery<TData, TVariables = Variables>(
+    options: CacheReadQueryOptions<TData, TVariables>,
+  ): ?TData;
+  writeQuery<TData, TVariables = Variables>(
+    options: CacheWriteQueryOptions<TData, TVariables>,
+  ): void;
+  readFragment<TData>(options: CacheReadFragmentOptions<TData>): TData;
+  writeFragment<TData>(options: CacheWriteFragmentOptions<TData>): void;
+  modify(options: CacheModifyOptions): boolean;
+  evict(options: CacheEvictOptions): boolean;
+  extract(): StoreSnapshot;
+  restore(snapshot: StoreSnapshot): GeneCache;
+  watch(listener: CacheWatchListener): Unsubscribe;
 }
 export type EnvironmentOptions = {
   +fetcher?: Fetcher<any, any>,
@@ -120,6 +167,7 @@ export type EnvironmentOptions = {
 };
 export interface Environment {
   +store: GeneStore;
+  +cache: GeneCache;
   +storeCell: Cell<StoreSnapshot>;
   execute<TData, TVariables>(
     operation: OperationDocument<TData, TVariables>,
@@ -208,6 +256,7 @@ declare export function createEnvironment(options: EnvironmentOptions): Environm
 declare export function setDefaultEnvironment(environment: Environment): Environment;
 declare export function getDefaultEnvironment(): Environment;
 declare export function createStore(options?: StoreOptions): GeneStore;
+declare export function createCache(store: GeneStore): GeneCache;
 declare export function cacheKey(operation: OperationDocument<any, any>, variables?: ?Variables): string;
 declare export function createResource<T>(promise: Promise<T>): Resource<T>;
 declare export function resolvedResource<T>(value: T): Resource<T>;
@@ -215,6 +264,7 @@ declare export function rejectedResource<T>(error: mixed): Resource<T>;
 declare export class GeneEnvironment {
   constructor(options?: EnvironmentOptions): void;
   +store: GeneStore;
+  +cache: GeneCache;
   +storeCell: Cell<StoreSnapshot>;
   execute<TData, TVariables>(
     operation: OperationDocument<TData, TVariables>,
@@ -243,6 +293,7 @@ declare export class GeneStoreImpl {
   constructor(options?: StoreOptions): void;
   +cell: Cell<StoreSnapshot>;
   getSnapshot(): StoreSnapshot;
+  restore(snapshot: StoreSnapshot): void;
   hasOperation(operation: OperationDocument<any, any>, variables?: ?Variables): boolean;
   writeOperation<TData, TVariables>(
     operation: OperationDocument<TData, TVariables>,
@@ -254,6 +305,25 @@ declare export class GeneStoreImpl {
     variables: TVariables,
   ): ?TData;
   readFragment<TData>(fragment: FragmentDocument<TData>, ref: mixed): TData;
+  writeFragment<TData>(fragment: FragmentDocument<TData>, ref: mixed, data: TData): void;
+  modify(id: string, fields: CacheModifyFields): boolean;
+  evict(id: string): boolean;
+}
+declare export class GeneCacheImpl implements GeneCache {
+  constructor(store: GeneStore): void;
+  readQuery<TData, TVariables = Variables>(
+    options: CacheReadQueryOptions<TData, TVariables>,
+  ): ?TData;
+  writeQuery<TData, TVariables = Variables>(
+    options: CacheWriteQueryOptions<TData, TVariables>,
+  ): void;
+  readFragment<TData>(options: CacheReadFragmentOptions<TData>): TData;
+  writeFragment<TData>(options: CacheWriteFragmentOptions<TData>): void;
+  modify(options: CacheModifyOptions): boolean;
+  evict(options: CacheEvictOptions): boolean;
+  extract(): StoreSnapshot;
+  restore(snapshot: StoreSnapshot): GeneCache;
+  watch(listener: CacheWatchListener): Unsubscribe;
 }
 declare export class GeneResource<T> {
   constructor(input: Promise<T> | T): void;

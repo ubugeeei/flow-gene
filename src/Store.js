@@ -12,6 +12,7 @@ import {
 } from "./Document";
 import { stableStringify } from "./Stable";
 import type {
+  CacheModifyFields,
   FragmentDocument,
   GeneStore as GeneStoreInterface,
   IdentifyContext,
@@ -119,6 +120,7 @@ function normalizeValue(
   path: Array<string>,
   owner: any,
   identify: IdentifyFunction,
+  forcedID?: ?string,
 ): mixed {
   if (Array.isArray(value)) {
     return value.map((item, index) =>
@@ -135,7 +137,7 @@ function normalizeValue(
   }
 
   const objectValue: { +[string]: mixed } = (value as any);
-  const id = identify(objectValue, { path, selectionSet }) ?? path.join(".");
+  const id = forcedID ?? identify(objectValue, { path, selectionSet }) ?? path.join(".");
   const previous = records[id] ?? {};
   const record: { [string]: mixed } = {
     ...previous,
@@ -185,6 +187,21 @@ function dereference(snapshot: StoreSnapshot, value: mixed): mixed {
   return value;
 }
 
+function targetID(ref: mixed): ?string {
+  if (typeof ref === "string") {
+    return ref;
+  }
+
+  if (
+    isObject(ref) &&
+    typeof (ref as any).$ref === "string"
+  ) {
+    return (ref as any).$ref;
+  }
+
+  return null;
+}
+
 function readSelectedValue(
   snapshot: StoreSnapshot,
   value: mixed,
@@ -232,6 +249,12 @@ export class GeneStoreImpl implements GeneStoreInterface {
 
   getSnapshot(): StoreSnapshot {
     return this._snapshot.get();
+  }
+
+  restore(snapshot: StoreSnapshot): void {
+    transaction(() => {
+      this._snapshot.set(snapshot);
+    });
   }
 
   hasOperation(operation: OperationDocument<any, any>, variables?: ?Variables): boolean {
@@ -292,7 +315,7 @@ export class GeneStoreImpl implements GeneStoreInterface {
     ref: mixed,
   ): TData {
     const snapshot = this._snapshot.get();
-    let value = ref;
+    let value = targetID(ref) == null ? ref : { $ref: targetID(ref) };
 
     if (isObject(ref) && typeof (ref as any).$ref !== "string") {
       const id = this._identify((ref as any), {
@@ -311,6 +334,91 @@ export class GeneStoreImpl implements GeneStoreInterface {
       fragment.definition.selectionSet,
       fragment,
     ) as any);
+  }
+
+  writeFragment<TData>(
+    fragment: FragmentDocument<TData>,
+    ref: mixed,
+    data: TData,
+  ): void {
+    const snapshot = this._snapshot.get();
+    const records: { [string]: NormalizedRecord } = { ...snapshot.records };
+    const roots: { [string]: mixed } = { ...snapshot.roots };
+    const id = targetID(ref) ?? (
+      isObject(data)
+        ? this._identify((data as any), {
+          path: [fragment.name],
+          selectionSet: fragment.definition.selectionSet,
+        })
+        : null
+    );
+
+    normalizeValue(
+      data,
+      fragment.definition.selectionSet,
+      records,
+      [id ?? fragment.name],
+      fragment,
+      this._identify,
+      id,
+    );
+
+    transaction(() => {
+      this._snapshot.set({
+        version: 1,
+        records,
+        roots,
+      });
+    });
+  }
+
+  modify(id: string, fields: CacheModifyFields): boolean {
+    const snapshot = this._snapshot.get();
+    const record = snapshot.records[id];
+
+    if (record == null) {
+      return false;
+    }
+
+    const records: { [string]: NormalizedRecord } = { ...snapshot.records };
+    const nextRecord: { [string]: mixed } = { ...record };
+
+    for (const key of Object.keys(fields)) {
+      nextRecord[key] = fields[key](record[key], record);
+    }
+
+    records[id] = nextRecord;
+    transaction(() => {
+      this._snapshot.set({
+        version: 1,
+        records,
+        roots: snapshot.roots,
+      });
+    });
+
+    return true;
+  }
+
+  evict(id: string): boolean {
+    const snapshot = this._snapshot.get();
+    if (snapshot.records[id] == null && snapshot.roots[id] == null) {
+      return false;
+    }
+
+    const records: { [string]: NormalizedRecord } = { ...snapshot.records };
+    const roots: { [string]: mixed } = { ...snapshot.roots };
+    delete records[id];
+    delete roots[id];
+
+    transaction(() => {
+      this._snapshot.set({
+        version: 1,
+        records,
+        roots,
+      });
+    });
+
+    return true;
   }
 }
 

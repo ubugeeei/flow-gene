@@ -4,6 +4,9 @@ import {
   setDefaultEnvironment,
 } from "./DefaultEnvironment";
 import {
+  createCache,
+} from "./Cache";
+import {
   executableSource,
 } from "./Document";
 import {
@@ -22,6 +25,7 @@ import type {
   EnvironmentOptions,
   FetchContext,
   Fetcher,
+  GeneCache,
   GeneStore,
   GraphQLResponse,
   HeaderMap,
@@ -149,6 +153,7 @@ function notifySink<TData>(sink: SubscribeSink<TData>, data: TData): void {
 
 export class GeneEnvironment {
   store: GeneStore;
+  cache: GeneCache;
   storeCell: Cell<StoreSnapshot>;
   _fetcher: Fetcher<any, any>;
   _subscriber: any;
@@ -160,6 +165,7 @@ export class GeneEnvironment {
       snapshot: environmentOptions.snapshot,
       identify: environmentOptions.identify,
     });
+    this.cache = createCache(this.store);
     this.storeCell = this.store.cell;
     this._fetcher = environmentOptions.fetcher ?? createEndpointFetcher(environmentOptions);
     this._subscriber = environmentOptions.subscriber;

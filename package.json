@@ -1,7 +1,7 @@
 {
   "name": "flow-gene",
-  "version": "0.1.0",
-  "description": "Experimental Flow typed GraphQL layer for React 19, built on top of flow-cell.",
+  "version": "0.2.0",
+  "description": "Experimental fragment-colocated GraphQL layer for React 19, built on top of flow-cell.",
   "packageManager": "yarn@4.14.1",
   "main": "./dist/FlowGene.js",
   "module": "./dist/FlowGene.mjs",
@@ -41,6 +41,7 @@
     "flow",
     "react",
     "graphql",
+    "fragment-colocation",
     "suspense",
     "rsc",
     "normalized-cache"

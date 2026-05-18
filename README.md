@@ -2,13 +2,20 @@
 
 > Experimental: FlowGene is an early GraphQL layer for the FlowCell ecosystem. APIs may change while the compiler and cache model settle.
 
-FlowGene makes GraphQL a first-class primitive instead of hiding it behind a generic data-fetching channel. The package is intentionally small:
+FlowGene is a fragment-colocation-first GraphQL layer for the FlowCell ecosystem. Components declare the data they render with `gql.fragment`; route-level operations compose those fragments into executable GraphQL. GraphQL stays visible, while FlowGene provides the compiler-shaped pieces around it: operation typing, fragment reads, normalized storage, and Suspense resources.
 
-- `gql.fragment` declares component-local data dependencies.
-- `gql.query`, `gql.mutation`, and `gql.subscription` keep GraphQL operation types explicit.
-- query and mutation results write into a normalized store backed by a `flow-cell` cell.
-- `load()` returns a resource that works with both `await` and React 19 `use(resource)`.
-- fragments read through `use(UserCard_user.read(user))` without adding a GraphQL-specific hook.
+The center of the API is deliberately small:
+
+- `gql.fragment` is the component-local data contract.
+- `gql.query` composes colocated fragments at route or RSC boundaries.
+- `gql.mutation` and `gql.subscription` keep GraphQL operation types explicit.
+- normalized records live in a `flow-cell` cell.
+- resources work with both `await` and React 19 `use(resource)`.
+- fragment reads use `use(UserCard_user.read(user))`; no GraphQL-specific hook is required.
+
+## Fragment colocation
+
+Put the fragment next to the component that renders it. Parent queries should spread child fragments instead of spelling out child fields.
 
 ```js
 import { gql, createEnvironment } from "flow-gene";
@@ -24,14 +31,39 @@ createEnvironment({
   },
 });
 
-export const UserCard_user = gql.fragment`
-  fragment UserCard_user on User {
-    id
-    name
+// UserAvatar.js
+export const UserAvatar_image = gql.fragment`
+  fragment UserAvatar_image on User {
     avatarUrl
   }
 `;
 
+component UserAvatar(user: FragmentRef<typeof UserAvatar_image>) {
+  const data = use(UserAvatar_image.read(user));
+  return <img src={data.avatarUrl} alt="" />;
+}
+
+// UserCard.js
+export const UserCard_user = gql.fragment`
+  fragment UserCard_user on User {
+    id
+    name
+    ...UserAvatar_image
+  }
+`;
+
+component UserCard(user: FragmentRef<typeof UserCard_user>) {
+  const data = use(UserCard_user.read(user));
+
+  return (
+    <article>
+      <UserAvatar user={data} />
+      <h2>{data.name}</h2>
+    </article>
+  );
+}
+
+// UserPage.js
 export const UserPage_query = gql.query`
   query UserPage_query($id: ID!) {
     user(id: $id) {
@@ -40,6 +72,8 @@ export const UserPage_query = gql.query`
   }
 `;
 ```
+
+When `UserPage_query.load()` runs, FlowGene sends an executable document containing `UserPage_query`, `UserCard_user`, and `UserAvatar_image`. The network operation is still plain GraphQL; colocation only changes where the data contract lives.
 
 React usage stays close to Suspense:
 
@@ -63,7 +97,12 @@ component UserScreen(result: Resource<typeof UserPage_query>) {
 
 component UserCard(user: FragmentRef<typeof UserCard_user>) {
   const data = use(UserCard_user.read(user));
-  return <h2>{data.name}</h2>;
+  return (
+    <article>
+      <UserAvatar user={data} />
+      <h2>{data.name}</h2>
+    </article>
+  );
 }
 ```
 
@@ -115,6 +154,55 @@ createEnvironment({
 });
 ```
 
+## Apollo-style cache
+
+The normalized store is also exposed through an explicit cache API. It follows the familiar Apollo shape while staying backed by a `flow-cell` cell.
+
+```js
+const environment = createEnvironment({ fetcher });
+
+environment.cache.writeQuery({
+  query: UserPage_query,
+  variables: { id: "1" },
+  data: {
+    user: {
+      __typename: "User",
+      id: "1",
+      name: "Ada",
+      avatarUrl: "/ada.png",
+    },
+  },
+});
+
+const data = environment.cache.readQuery({
+  query: UserPage_query,
+  variables: { id: "1" },
+});
+
+environment.cache.writeFragment({
+  fragment: UserCard_user,
+  from: "User:1",
+  data: {
+    __typename: "User",
+    id: "1",
+    name: "Ada Lovelace",
+    avatarUrl: "/ada.png",
+  },
+});
+
+environment.cache.modify({
+  id: "User:1",
+  fields: {
+    name: value => `${String(value)}!`,
+  },
+});
+
+const snapshot = environment.cache.extract();
+environment.cache.restore(snapshot);
+```
+
+The cache supports `readQuery`, `writeQuery`, `readFragment`, `writeFragment`, `modify`, `evict`, `extract`, `restore`, and `watch`.
+
 ## Scripts
 
 ```sh
@@ -138,6 +226,6 @@ After the package exists on npm, configure a Trusted Publisher for:
 Future releases publish from signed GitHub OIDC by pushing a version tag that matches `package.json`.
 
 ```sh
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.0
+git push origin v0.2.0
 ```

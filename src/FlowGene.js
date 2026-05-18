@@ -3,6 +3,15 @@
 export type {
   AnyDocument,
   BaseDocument,
+  CacheEvictOptions,
+  CacheModifyFields,
+  CacheModifyFunction,
+  CacheModifyOptions,
+  CacheReadFragmentOptions,
+  CacheReadQueryOptions,
+  CacheWatchListener,
+  CacheWriteFragmentOptions,
+  CacheWriteQueryOptions,
   DocumentKind,
   EntityRef,
   Environment,
@@ -12,6 +21,7 @@ export type {
   Fetcher,
   FragmentDocument,
   FragmentRef,
+  GeneCache,
   GeneStore,
   GqlTag,
   GraphQLErrorLike,
@@ -38,6 +48,10 @@ export type {
   Variables,
 } from "./Types";
 
+export {
+  GeneCacheImpl,
+  createCache,
+} from "./Cache";
 export {
   getDefaultEnvironment,
   setDefaultEnvironment,

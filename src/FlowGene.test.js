@@ -5,12 +5,18 @@ import {
   gql,
 } from "./FlowGene";
 
-test("query.load fetches, normalizes, and exposes a cell-backed resource", async () => {
+test("query.load composes colocated fragments, normalizes, and exposes a cell-backed resource", async () => {
+  const UserAvatar_image = gql.fragment`
+    fragment UserAvatar_image on User {
+      avatarUrl
+    }
+  `;
+
   const UserCard_user = gql.fragment`
     fragment UserCard_user on User {
       id
       name
-      avatarUrl
+      ...UserAvatar_image
     }
   `;
 
@@ -53,11 +59,17 @@ test("query.load fetches, normalizes, and exposes a cell-backed resource", async
   expect(resource.status.get().status).toBe("fulfilled");
   expect(calls.length).toBe(1);
   expect(calls[0].document).toContain("fragment UserCard_user on User");
+  expect(calls[0].document).toContain("fragment UserAvatar_image on User");
 
   const fragmentData = await UserCard_user.read(data.user);
   expect(fragmentData).toEqual({
     id: "1",
     name: "Ada",
+    avatarUrl: "/ada.png",
+  });
+
+  const avatarData = await UserAvatar_image.read(fragmentData);
+  expect(avatarData).toEqual({
     avatarUrl: "/ada.png",
   });
 });
@@ -97,6 +109,119 @@ test("query.read uses the normalized cache before fetching", async () => {
     },
   });
   expect(calls).toBe(1);
+});
+
+test("environment.cache exposes Apollo-style normalized cache operations", () => {
+  const UserCard_user = gql.fragment`
+    fragment UserCard_user on User {
+      id
+      name
+      avatarUrl
+    }
+  `;
+
+  const UserPage_query = gql.query`
+    query UserPage_query($id: ID!) {
+      user(id: $id) {
+        id
+        name
+        avatarUrl
+      }
+    }
+  `;
+
+  const environment = createEnvironment({
+    fetcher: async () => ({ data: {} }),
+  });
+  const watched = [];
+  const unsubscribe = environment.cache.watch(snapshot => {
+    watched.push(snapshot);
+  });
+
+  environment.cache.writeQuery({
+    query: UserPage_query,
+    variables: { id: "3" },
+    data: {
+      user: {
+        __typename: "User",
+        id: "3",
+        name: "Mary",
+        avatarUrl: "/mary.png",
+      },
+    },
+  });
+
+  expect(environment.cache.readQuery({
+    query: UserPage_query,
+    variables: { id: "3" },
+  })).toEqual({
+    user: {
+      id: "3",
+      name: "Mary",
+      avatarUrl: "/mary.png",
+    },
+  });
+
+  environment.cache.writeFragment({
+    fragment: UserCard_user,
+    from: "User:3",
+    data: {
+      __typename: "User",
+      id: "3",
+      name: "Mary Jackson",
+      avatarUrl: "/jackson.png",
+    },
+  });
+
+  expect(environment.cache.readFragment({
+    fragment: UserCard_user,
+    from: "User:3",
+  })).toEqual({
+    id: "3",
+    name: "Mary Jackson",
+    avatarUrl: "/jackson.png",
+  });
+
+  expect(environment.cache.modify({
+    id: "User:3",
+    fields: {
+      name: value => `${String(value)}!`,
+    },
+  })).toBe(true);
+
+  expect(environment.cache.readFragment({
+    fragment: UserCard_user,
+    from: { $ref: "User:3" },
+  })).toEqual({
+    id: "3",
+    name: "Mary Jackson!",
+    avatarUrl: "/jackson.png",
+  });
+
+  const snapshot = environment.cache.extract();
+  const restoredEnvironment = createEnvironment({
+    fetcher: async () => ({ data: {} }),
+    snapshot,
+    setAsDefault: false,
+  });
+
+  expect(restoredEnvironment.cache.readFragment({
+    fragment: UserCard_user,
+    from: "User:3",
+  })).toEqual({
+    id: "3",
+    name: "Mary Jackson!",
+    avatarUrl: "/jackson.png",
+  });
+
+  expect(restoredEnvironment.cache.evict({ id: "User:3" })).toBe(true);
+  expect(restoredEnvironment.cache.readFragment({
+    fragment: UserCard_user,
+    from: "User:3",
+  })).toBe(null);
+
+  unsubscribe();
+  expect(watched.length).toBe(3);
 });
 
 test("mutation.action maps FormData to a single input variable", async () => {

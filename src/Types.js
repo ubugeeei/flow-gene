@@ -85,6 +85,7 @@ export type StoreOptions = {
 export interface GeneStore {
   +cell: Cell<StoreSnapshot>;
   getSnapshot(): StoreSnapshot;
+  restore(snapshot: StoreSnapshot): void;
   hasOperation(operation: OperationDocument<any, any>, variables?: ?Variables): boolean;
   writeOperation<TData, TVariables>(
     operation: OperationDocument<TData, TVariables>,
@@ -99,6 +100,69 @@ export interface GeneStore {
     fragment: FragmentDocument<TData>,
     ref: mixed,
   ): TData;
+  writeFragment<TData>(
+    fragment: FragmentDocument<TData>,
+    ref: mixed,
+    data: TData,
+  ): void;
+  modify(id: string, fields: CacheModifyFields): boolean;
+  evict(id: string): boolean;
+}
+
+export type CacheReadQueryOptions<TData, TVariables = Variables> = {
+  +query: QueryDocument<TData, TVariables>,
+  +variables?: TVariables,
+};
+
+export type CacheWriteQueryOptions<TData, TVariables = Variables> = {
+  +query: QueryDocument<TData, TVariables>,
+  +variables?: TVariables,
+  +data: TData,
+};
+
+export type CacheReadFragmentOptions<TData> = {
+  +fragment: FragmentDocument<TData>,
+  +from: mixed,
+};
+
+export type CacheWriteFragmentOptions<TData> = {
+  +fragment: FragmentDocument<TData>,
+  +from: mixed,
+  +data: TData,
+};
+
+export type CacheModifyFunction = (
+  value: mixed,
+  record: NormalizedRecord,
+) => mixed;
+
+export type CacheModifyFields = { +[string]: CacheModifyFunction };
+
+export type CacheModifyOptions = {
+  +id: string,
+  +fields: CacheModifyFields,
+};
+
+export type CacheEvictOptions = {
+  +id: string,
+};
+
+export type CacheWatchListener = (snapshot: StoreSnapshot) => mixed;
+
+export interface GeneCache {
+  readQuery<TData, TVariables = Variables>(
+    options: CacheReadQueryOptions<TData, TVariables>,
+  ): ?TData;
+  writeQuery<TData, TVariables = Variables>(
+    options: CacheWriteQueryOptions<TData, TVariables>,
+  ): void;
+  readFragment<TData>(options: CacheReadFragmentOptions<TData>): TData;
+  writeFragment<TData>(options: CacheWriteFragmentOptions<TData>): void;
+  modify(options: CacheModifyOptions): boolean;
+  evict(options: CacheEvictOptions): boolean;
+  extract(): StoreSnapshot;
+  restore(snapshot: StoreSnapshot): GeneCache;
+  watch(listener: CacheWatchListener): Unsubscribe;
 }
 
 export type FetchPolicy = "cache-first" | "network-only" | "cache-and-network";
@@ -151,6 +215,7 @@ export type EnvironmentOptions = {
 
 export interface Environment {
   +store: GeneStore;
+  +cache: GeneCache;
   +storeCell: Cell<StoreSnapshot>;
   execute<TData, TVariables>(
     operation: OperationDocument<TData, TVariables>,
