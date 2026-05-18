@@ -226,6 +226,6 @@ After the package exists on npm, configure a Trusted Publisher for:
 Future releases publish from signed GitHub OIDC by pushing a version tag that matches `package.json`.
 
 ```sh
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.3.0
+git push origin v0.3.0
 ```
