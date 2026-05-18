@@ -1,0 +1,25 @@
+[ignore]
+.*/node_modules/.*
+.*/dist/.*
+.*/.test-build/.*
+<PROJECT_ROOT>/FlowGene.js
+<PROJECT_ROOT>/FlowGene.mjs
+<PROJECT_ROOT>/FlowGene.js.flow
+<PROJECT_ROOT>/src/FlowGene.test.js
+
+[include]
+<PROJECT_ROOT>/src
+
+[libs]
+<PROJECT_ROOT>/flow-typed
+
+[lints]
+
+[options]
+component_syntax=true
+module.name_mapper='^flow-gene$' -> '<PROJECT_ROOT>/src/FlowGene.js'
+module.name_mapper='^flow-gene/client$' -> '<PROJECT_ROOT>/src/Client.js'
+module.name_mapper='^flow-gene/server$' -> '<PROJECT_ROOT>/src/Server.js'
+react.runtime=automatic
+
+[strict]

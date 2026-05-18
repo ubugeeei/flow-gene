@@ -1,0 +1,17 @@
+node_modules/
+dist/
+coverage/
+.test-build/
+.flow/
+.pnp.*
+.yarn/*
+!.yarn/releases/
+!.yarn/releases/**
+/FlowGene.js
+/FlowGene.mjs
+/FlowGene.js.flow
+.DS_Store
+package-lock.json
+*.tgz
+npm-debug.log*
+yarn-error.log*

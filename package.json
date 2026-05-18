@@ -1,0 +1,79 @@
+{
+  "name": "flow-gene",
+  "version": "0.1.0",
+  "description": "Experimental Flow typed GraphQL layer for React 19, built on top of flow-cell.",
+  "packageManager": "npm@11.12.1",
+  "main": "./dist/FlowGene.js",
+  "module": "./dist/FlowGene.mjs",
+  "exports": {
+    ".": {
+      "react-server": "./dist/Server.mjs",
+      "import": "./dist/FlowGene.mjs",
+      "require": "./dist/FlowGene.js",
+      "default": "./dist/FlowGene.mjs"
+    },
+    "./client": {
+      "import": "./dist/Client.mjs",
+      "require": "./dist/Client.js",
+      "default": "./dist/Client.mjs"
+    },
+    "./server": {
+      "import": "./dist/Server.mjs",
+      "require": "./dist/Server.js",
+      "default": "./dist/Server.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node Build.js",
+    "flow": "flow check",
+    "prepare": "node Build.js",
+    "smoke": "node Smoke.js",
+    "test": "node Test.js",
+    "verify": "npm run flow && npm test && npm run build && npm run smoke"
+  },
+  "keywords": [
+    "flow",
+    "react",
+    "graphql",
+    "suspense",
+    "rsc",
+    "normalized-cache"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ubugeeei/flow-gene.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ubugeeei/flow-gene/issues"
+  },
+  "homepage": "https://github.com/ubugeeei/flow-gene#readme",
+  "engines": {
+    "node": ">=18.18.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "react": ">=19.0.0"
+  },
+  "dependencies": {
+    "flow-cell": "^0.1.0",
+    "graphql": "^16.11.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.29.0",
+    "@babel/plugin-transform-modules-commonjs": "^7.28.6",
+    "@babel/preset-flow": "^7.27.1",
+    "babel-plugin-syntax-hermes-parser": "^0.36.1",
+    "flow-bin": "^0.314.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
+  }
+}
