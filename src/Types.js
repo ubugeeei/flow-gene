@@ -238,6 +238,7 @@ export interface Environment {
     sink: SubscribeSink<TData>,
     options?: SubscribeOptions,
   ): Unsubscribe;
+  snapshot(): StoreSnapshot;
 }
 
 export interface BaseDocument {

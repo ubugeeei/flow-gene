@@ -13,75 +13,90 @@ import type {
   ResourceState,
 } from "./Types";
 
-export class GeneResource<T> implements Resource<T> {
-  status: Cell<ResourceState<T>>;
-  _promise: Promise<T>;
+function createStatusCell<T>(options?: ResourceOptions<T>): Cell<ResourceState<T>> {
+  const pendingState: ResourceState<T> = { status: "pending" };
+  return cell(options?.initialState ?? pendingState, {
+    key: options?.key,
+    name: options?.name,
+  });
+}
 
-  constructor(input: Promise<T> | T, options?: ResourceOptions<T>): void {
-    const pendingState: ResourceState<T> = { status: "pending" };
-    const initialState: ResourceState<T> = options?.initialState ?? pendingState;
-    this.status = cell(initialState, {
-      key: options?.key,
-      name: options?.name,
-    });
+function settleIntoStatus<T>(
+  input: Promise<T> | T,
+  status: Cell<ResourceState<T>>,
+): Promise<T> {
+  return Promise.resolve(input).then(
+    value => {
+      transaction(() => {
+        status.set({ status: "fulfilled", value });
+      });
+      return value;
+    },
+    error => {
+      transaction(() => {
+        status.set({ status: "rejected", error });
+      });
+      throw error;
+    },
+  );
+}
 
-    this._promise = Promise.resolve(input).then(
-      value => {
-        transaction(() => {
-          this.status.set({ status: "fulfilled", value });
-        });
-        return value;
-      },
-      error => {
-        transaction(() => {
-          this.status.set({ status: "rejected", error });
-        });
-        throw error;
-      },
-    );
+function readResourceState<T>(
+  status: Cell<ResourceState<T>>,
+  promise: Promise<T>,
+): T {
+  const state = status.get();
+
+  if (state.status === "fulfilled") {
+    return state.value;
   }
 
-  then(onFulfilled?: any, onRejected?: any): any {
-    return this._promise.then(onFulfilled, onRejected);
+  if (state.status === "rejected") {
+    throw state.error;
   }
 
-  catch(onRejected?: any): any {
-    return this._promise.catch(onRejected);
-  }
+  throw promise;
+}
 
-  finally(onFinally?: ?() => mixed): Promise<T> {
-    return onFinally == null
-      ? this._promise.finally(() => {})
-      : this._promise.finally(onFinally);
-  }
+function createGeneResource<T>(
+  input: Promise<T> | T,
+  options?: ResourceOptions<T>,
+): Resource<T> {
+  const status = createStatusCell(options);
+  const promise = settleIntoStatus(input, status);
+  const resource: Resource<T> = {
+    status,
+    then: (onFulfilled?: any, onRejected?: any): any =>
+      promise.then(onFulfilled, onRejected),
+    catch: (onRejected?: any): any =>
+      promise.catch(onRejected),
+    finally: (onFinally?: ?() => mixed): Promise<T> =>
+      onFinally == null ? promise.finally(() => {}) : promise.finally(onFinally),
+    read: (): T => readResourceState(status, promise),
+  };
 
-  read(): T {
-    const state = this.status.get();
+  return Object.freeze(resource);
+}
 
-    if (state.status === "fulfilled") {
-      return state.value;
-    }
-
-    if (state.status === "rejected") {
-      throw state.error;
-    }
-
-    throw this._promise;
-  }
+export function GeneResource<T>(
+  input: Promise<T> | T,
+  options?: ResourceOptions<T>,
+): Resource<T> {
+  return createGeneResource(input, options);
 }
 
 export function createResource<T>(
   promise: Promise<T>,
   options?: ResourceOptions<T>,
 ): Resource<T> {
-  return new GeneResource(promise, options);
+  return createGeneResource(promise, options);
 }
 
 export function resolvedResource<T>(
   value: T,
   options?: ResourceOptions<T>,
 ): Resource<T> {
-  return new GeneResource(Promise.resolve(value), {
+  return createGeneResource(Promise.resolve(value), {
     ...options,
     initialState: { status: "fulfilled", value },
   });
@@ -91,7 +106,7 @@ export function rejectedResource<T>(
   error: mixed,
   options?: ResourceOptions<T>,
 ): Resource<T> {
-  return new GeneResource((Promise.reject(error) as Promise<T>), {
+  return createGeneResource((Promise.reject(error) as Promise<T>), {
     ...options,
     initialState: { status: "rejected", error },
   });

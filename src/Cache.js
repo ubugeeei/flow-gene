@@ -17,64 +17,62 @@ import type {
   Unsubscribe,
 } from "flow-cell/server";
 
-export class GeneCacheImpl implements GeneCacheInterface {
-  _store: GeneStore;
+export function createCache(store: GeneStore): GeneCacheInterface {
+  const cache: GeneCacheInterface = {
+    readQuery<TData, TVariables = Variables>(
+      options: CacheReadQueryOptions<TData, TVariables>,
+    ): ?TData {
+      return store.readOperation(
+        options.query,
+        options.variables ?? ({} as any),
+      );
+    },
 
-  constructor(store: GeneStore): void {
-    this._store = store;
-  }
+    writeQuery<TData, TVariables = Variables>(
+      options: CacheWriteQueryOptions<TData, TVariables>,
+    ): void {
+      store.writeOperation(
+        options.query,
+        options.variables ?? ({} as any),
+        options.data,
+      );
+    },
 
-  readQuery<TData, TVariables = Variables>(
-    options: CacheReadQueryOptions<TData, TVariables>,
-  ): ?TData {
-    return this._store.readOperation(
-      options.query,
-      options.variables ?? ({} as any),
-    );
-  }
+    readFragment<TData>(options: CacheReadFragmentOptions<TData>): TData {
+      return store.readFragment(options.fragment, options.from);
+    },
 
-  writeQuery<TData, TVariables = Variables>(
-    options: CacheWriteQueryOptions<TData, TVariables>,
-  ): void {
-    this._store.writeOperation(
-      options.query,
-      options.variables ?? ({} as any),
-      options.data,
-    );
-  }
+    writeFragment<TData>(options: CacheWriteFragmentOptions<TData>): void {
+      store.writeFragment(options.fragment, options.from, options.data);
+    },
 
-  readFragment<TData>(options: CacheReadFragmentOptions<TData>): TData {
-    return this._store.readFragment(options.fragment, options.from);
-  }
+    modify(options: CacheModifyOptions): boolean {
+      return store.modify(options.id, options.fields);
+    },
 
-  writeFragment<TData>(options: CacheWriteFragmentOptions<TData>): void {
-    this._store.writeFragment(options.fragment, options.from, options.data);
-  }
+    evict(options: CacheEvictOptions): boolean {
+      return store.evict(options.id);
+    },
 
-  modify(options: CacheModifyOptions): boolean {
-    return this._store.modify(options.id, options.fields);
-  }
+    extract(): StoreSnapshot {
+      return store.getSnapshot();
+    },
 
-  evict(options: CacheEvictOptions): boolean {
-    return this._store.evict(options.id);
-  }
+    restore(snapshot: StoreSnapshot): GeneCacheInterface {
+      store.restore(snapshot);
+      return cache;
+    },
 
-  extract(): StoreSnapshot {
-    return this._store.getSnapshot();
-  }
+    watch(listener: CacheWatchListener): Unsubscribe {
+      return store.cell.subscribe(() => {
+        listener(store.getSnapshot());
+      });
+    },
+  };
 
-  restore(snapshot: StoreSnapshot): GeneCacheInterface {
-    this._store.restore(snapshot);
-    return this;
-  }
-
-  watch(listener: CacheWatchListener): Unsubscribe {
-    return this._store.cell.subscribe(() => {
-      listener(this._store.getSnapshot());
-    });
-  }
+  return Object.freeze(cache);
 }
 
-export function createCache(store: GeneStore): GeneCacheInterface {
-  return new GeneCacheImpl(store);
+export function GeneCacheImpl(store: GeneStore): GeneCacheInterface {
+  return createCache(store);
 }

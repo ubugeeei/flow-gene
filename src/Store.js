@@ -230,200 +230,255 @@ function readSelectedValue(
   return result;
 }
 
-export class GeneStoreImpl implements GeneStoreInterface {
-  _snapshot: Cell<StoreSnapshot>;
-  _identify: IdentifyFunction;
+function createSnapshotCell(options?: StoreOptions): Cell<StoreSnapshot> {
+  nextStoreID += 1;
+  return cell(options?.snapshot ?? EMPTY_SNAPSHOT, {
+    key: options?.key ?? `flow-gene.store.${String(nextStoreID)}`,
+    name: options?.name ?? "FlowGene store",
+  });
+}
 
-  constructor(options?: StoreOptions): void {
-    this._identify = options?.identify ?? defaultIdentify;
-    nextStoreID += 1;
-    this._snapshot = cell(options?.snapshot ?? EMPTY_SNAPSHOT, {
-      key: options?.key ?? `flow-gene.store.${String(nextStoreID)}`,
-      name: options?.name ?? "FlowGene store",
+function setSnapshot(
+  snapshotCell: Cell<StoreSnapshot>,
+  snapshot: StoreSnapshot,
+): void {
+  transaction(() => {
+    snapshotCell.set(snapshot);
+  });
+}
+
+function writeOperationSnapshot<TData, TVariables>(
+  snapshot: StoreSnapshot,
+  operation: OperationDocument<TData, TVariables>,
+  variables: TVariables,
+  data: TData,
+  identify: IdentifyFunction,
+): StoreSnapshot {
+  const records: { [string]: NormalizedRecord } = { ...snapshot.records };
+  const roots: { [string]: mixed } = { ...snapshot.roots };
+  const key = operationCacheKey(operation, (variables as any));
+  const root = normalizeValue(
+    data,
+    operation.definition.selectionSet,
+    records,
+    [key],
+    operation,
+    identify,
+  );
+
+  roots[key] = root;
+  return {
+    version: 1,
+    records,
+    roots,
+  };
+}
+
+function readOperationSnapshot<TData, TVariables>(
+  snapshot: StoreSnapshot,
+  operation: OperationDocument<TData, TVariables>,
+  variables: TVariables,
+): ?TData {
+  const key = operationCacheKey(operation, (variables as any));
+
+  if (!hasOwn(snapshot.roots, key)) {
+    return null;
+  }
+
+  return (readSelectedValue(
+    snapshot,
+    snapshot.roots[key],
+    operation.definition.selectionSet,
+    operation,
+  ) as any);
+}
+
+function readFragmentSnapshot<TData>(
+  snapshot: StoreSnapshot,
+  fragment: FragmentDocument<TData>,
+  ref: mixed,
+  identify: IdentifyFunction,
+): TData {
+  const refID = targetID(ref);
+  let value = refID == null ? ref : { $ref: refID };
+
+  if (isObject(ref) && typeof (ref as any).$ref !== "string") {
+    const id = identify((ref as any), {
+      path: [fragment.name],
+      selectionSet: fragment.definition.selectionSet,
     });
-  }
 
-  get cell(): Cell<StoreSnapshot> {
-    return this._snapshot;
-  }
-
-  getSnapshot(): StoreSnapshot {
-    return this._snapshot.get();
-  }
-
-  restore(snapshot: StoreSnapshot): void {
-    transaction(() => {
-      this._snapshot.set(snapshot);
-    });
-  }
-
-  hasOperation(operation: OperationDocument<any, any>, variables?: ?Variables): boolean {
-    const key = operationCacheKey(operation, variables);
-    return hasOwn(this._snapshot.get().roots, key);
-  }
-
-  writeOperation<TData, TVariables>(
-    operation: OperationDocument<TData, TVariables>,
-    variables: TVariables,
-    data: TData,
-  ): void {
-    const snapshot = this._snapshot.get();
-    const records: { [string]: NormalizedRecord } = { ...snapshot.records };
-    const roots: { [string]: mixed } = { ...snapshot.roots };
-    const key = operationCacheKey(operation, (variables as any));
-    const root = normalizeValue(
-      data,
-      operation.definition.selectionSet,
-      records,
-      [key],
-      operation,
-      this._identify,
-    );
-
-    roots[key] = root;
-
-    transaction(() => {
-      this._snapshot.set({
-        version: 1,
-        records,
-        roots,
-      });
-    });
-  }
-
-  readOperation<TData, TVariables>(
-    operation: OperationDocument<TData, TVariables>,
-    variables: TVariables,
-  ): ?TData {
-    const snapshot = this._snapshot.get();
-    const key = operationCacheKey(operation, (variables as any));
-
-    if (!hasOwn(snapshot.roots, key)) {
-      return null;
+    if (id != null && snapshot.records[id] != null) {
+      value = { $ref: id };
     }
-
-    return (readSelectedValue(
-      snapshot,
-      snapshot.roots[key],
-      operation.definition.selectionSet,
-      operation,
-    ) as any);
   }
 
-  readFragment<TData>(
-    fragment: FragmentDocument<TData>,
-    ref: mixed,
-  ): TData {
-    const snapshot = this._snapshot.get();
-    let value = targetID(ref) == null ? ref : { $ref: targetID(ref) };
+  return (readSelectedValue(
+    snapshot,
+    value,
+    fragment.definition.selectionSet,
+    fragment,
+  ) as any);
+}
 
-    if (isObject(ref) && typeof (ref as any).$ref !== "string") {
-      const id = this._identify((ref as any), {
+function writeFragmentSnapshot<TData>(
+  snapshot: StoreSnapshot,
+  fragment: FragmentDocument<TData>,
+  ref: mixed,
+  data: TData,
+  identify: IdentifyFunction,
+): StoreSnapshot {
+  const records: { [string]: NormalizedRecord } = { ...snapshot.records };
+  const roots: { [string]: mixed } = { ...snapshot.roots };
+  const id = targetID(ref) ?? (
+    isObject(data)
+      ? identify((data as any), {
         path: [fragment.name],
         selectionSet: fragment.definition.selectionSet,
-      });
+      })
+      : null
+  );
 
-      if (id != null && snapshot.records[id] != null) {
-        value = { $ref: id };
-      }
-    }
+  normalizeValue(
+    data,
+    fragment.definition.selectionSet,
+    records,
+    [id ?? fragment.name],
+    fragment,
+    identify,
+    id,
+  );
 
-    return (readSelectedValue(
-      snapshot,
-      value,
-      fragment.definition.selectionSet,
-      fragment,
-    ) as any);
+  return {
+    version: 1,
+    records,
+    roots,
+  };
+}
+
+function modifySnapshot(
+  snapshot: StoreSnapshot,
+  id: string,
+  fields: CacheModifyFields,
+): ?StoreSnapshot {
+  const record = snapshot.records[id];
+
+  if (record == null) {
+    return null;
   }
 
-  writeFragment<TData>(
-    fragment: FragmentDocument<TData>,
-    ref: mixed,
-    data: TData,
-  ): void {
-    const snapshot = this._snapshot.get();
-    const records: { [string]: NormalizedRecord } = { ...snapshot.records };
-    const roots: { [string]: mixed } = { ...snapshot.roots };
-    const id = targetID(ref) ?? (
-      isObject(data)
-        ? this._identify((data as any), {
-          path: [fragment.name],
-          selectionSet: fragment.definition.selectionSet,
-        })
-        : null
-    );
+  const records: { [string]: NormalizedRecord } = { ...snapshot.records };
+  const nextRecord: { [string]: mixed } = { ...record };
 
-    normalizeValue(
-      data,
-      fragment.definition.selectionSet,
-      records,
-      [id ?? fragment.name],
-      fragment,
-      this._identify,
-      id,
-    );
-
-    transaction(() => {
-      this._snapshot.set({
-        version: 1,
-        records,
-        roots,
-      });
-    });
+  for (const key of Object.keys(fields)) {
+    nextRecord[key] = fields[key](record[key], record);
   }
 
-  modify(id: string, fields: CacheModifyFields): boolean {
-    const snapshot = this._snapshot.get();
-    const record = snapshot.records[id];
+  records[id] = nextRecord;
+  return {
+    version: 1,
+    records,
+    roots: snapshot.roots,
+  };
+}
 
-    if (record == null) {
-      return false;
-    }
-
-    const records: { [string]: NormalizedRecord } = { ...snapshot.records };
-    const nextRecord: { [string]: mixed } = { ...record };
-
-    for (const key of Object.keys(fields)) {
-      nextRecord[key] = fields[key](record[key], record);
-    }
-
-    records[id] = nextRecord;
-    transaction(() => {
-      this._snapshot.set({
-        version: 1,
-        records,
-        roots: snapshot.roots,
-      });
-    });
-
-    return true;
+function evictSnapshot(snapshot: StoreSnapshot, id: string): ?StoreSnapshot {
+  if (snapshot.records[id] == null && snapshot.roots[id] == null) {
+    return null;
   }
 
-  evict(id: string): boolean {
-    const snapshot = this._snapshot.get();
-    if (snapshot.records[id] == null && snapshot.roots[id] == null) {
-      return false;
-    }
+  const records: { [string]: NormalizedRecord } = { ...snapshot.records };
+  const roots: { [string]: mixed } = { ...snapshot.roots };
+  delete records[id];
+  delete roots[id];
 
-    const records: { [string]: NormalizedRecord } = { ...snapshot.records };
-    const roots: { [string]: mixed } = { ...snapshot.roots };
-    delete records[id];
-    delete roots[id];
-
-    transaction(() => {
-      this._snapshot.set({
-        version: 1,
-        records,
-        roots,
-      });
-    });
-
-    return true;
-  }
+  return {
+    version: 1,
+    records,
+    roots,
+  };
 }
 
 export function createStore(options?: StoreOptions): GeneStoreInterface {
-  return new GeneStoreImpl(options);
+  const identify = options?.identify ?? defaultIdentify;
+  const snapshotCell = createSnapshotCell(options);
+  const store: GeneStoreInterface = {
+    cell: snapshotCell,
+
+    getSnapshot(): StoreSnapshot {
+      return snapshotCell.get();
+    },
+
+    restore(snapshot: StoreSnapshot): void {
+      setSnapshot(snapshotCell, snapshot);
+    },
+
+    hasOperation(operation: OperationDocument<any, any>, variables?: ?Variables): boolean {
+      return hasOwn(snapshotCell.get().roots, operationCacheKey(operation, variables));
+    },
+
+    writeOperation<TData, TVariables>(
+      operation: OperationDocument<TData, TVariables>,
+      variables: TVariables,
+      data: TData,
+    ): void {
+      setSnapshot(
+        snapshotCell,
+        writeOperationSnapshot(snapshotCell.get(), operation, variables, data, identify),
+      );
+    },
+
+    readOperation<TData, TVariables>(
+      operation: OperationDocument<TData, TVariables>,
+      variables: TVariables,
+    ): ?TData {
+      return readOperationSnapshot(snapshotCell.get(), operation, variables);
+    },
+
+    readFragment<TData>(
+      fragment: FragmentDocument<TData>,
+      ref: mixed,
+    ): TData {
+      return readFragmentSnapshot(snapshotCell.get(), fragment, ref, identify);
+    },
+
+    writeFragment<TData>(
+      fragment: FragmentDocument<TData>,
+      ref: mixed,
+      data: TData,
+    ): void {
+      setSnapshot(
+        snapshotCell,
+        writeFragmentSnapshot(snapshotCell.get(), fragment, ref, data, identify),
+      );
+    },
+
+    modify(id: string, fields: CacheModifyFields): boolean {
+      const nextSnapshot = modifySnapshot(snapshotCell.get(), id, fields);
+      if (nextSnapshot == null) {
+        return false;
+      }
+
+      setSnapshot(snapshotCell, nextSnapshot);
+      return true;
+    },
+
+    evict(id: string): boolean {
+      const nextSnapshot = evictSnapshot(snapshotCell.get(), id);
+      if (nextSnapshot == null) {
+        return false;
+      }
+
+      setSnapshot(snapshotCell, nextSnapshot);
+      return true;
+    },
+  };
+
+  return Object.freeze(store);
+}
+
+export function GeneStoreImpl(options?: StoreOptions): GeneStoreInterface {
+  return createStore(options);
 }
 
 export function cacheKey(

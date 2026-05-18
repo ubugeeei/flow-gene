@@ -171,109 +171,140 @@ function actionInputToVariables(input: mixed, definition: Definition): mixed {
   return value;
 }
 
-export class GraphQLBaseDocument {
-  kind: any;
-  name: string;
-  source: string;
-  ast: any;
-  definition: Definition;
-  _fragments: FragmentMap;
+type RuntimeDocument = {
+  +kind: any,
+  +name: string,
+  +source: string,
+  +ast: any,
+  +definition: Definition,
+  +_fragments: FragmentMap,
+  +toString: () => string,
+  ...
+};
 
-  constructor(kind: DocumentKind, source: string, ast: any, definition: Definition): void {
-    this.kind = kind;
-    this.source = source;
-    this.ast = ast;
-    this.definition = definition;
-    this.name = definitionName(definition);
-    this._fragments = collectLocalFragments(ast);
-  }
+function createBaseDocument(
+  kind: DocumentKind,
+  source: string,
+  ast: any,
+  definition: Definition,
+): RuntimeDocument {
+  const document = {
+    kind,
+    source,
+    ast,
+    definition,
+    name: definitionName(definition),
+    _fragments: collectLocalFragments(ast),
+    toString: () => source,
+  };
 
-  toString(): string {
-    return this.source;
-  }
+  return Object.freeze(document);
 }
 
-export class GraphQLFragmentDocument<TData>
-  extends GraphQLBaseDocument {
+function createFragmentDocument<TData>(
+  source: string,
+  ast: any,
+  definition: Definition,
+): FragmentDocument<TData> {
+  let document: any;
+  document = {
+    ...createBaseDocument("fragment", source, ast, definition),
+    read(ref: mixed, options?: ReadOptions): Resource<TData> {
+      return resolveEnvironment(options).readFragment(document, ref, options);
+    },
+  };
 
-  constructor(source: string, ast: any, definition: Definition): void {
-    super("fragment", source, ast, definition);
-  }
-
-  read(ref: mixed, options?: ReadOptions): Resource<TData> {
-    return resolveEnvironment(options).readFragment(this, ref, options);
-  }
+  return (Object.freeze(document) as any);
 }
 
-export class GraphQLOperationDocument<TData, TVariables = Variables>
-  extends GraphQLBaseDocument {
+function createOperationDocument<TData, TVariables = Variables>(
+  kind: OperationType,
+  source: string,
+  ast: any,
+  definition: Definition,
+): {
+  +load: (variables?: TVariables, options?: LoadOptions<TData>) => Resource<TData>,
+  +read: (variables?: TVariables, options?: LoadOptions<TData>) => Resource<TData>,
+  ...
+} {
+  let document: any;
+  document = {
+    ...createBaseDocument(kind, source, ast, definition),
+    load(variables?: TVariables, options?: LoadOptions<TData>): Resource<TData> {
+      return resolveEnvironment(options).execute(
+        document,
+        variables ?? ({} as any),
+        options,
+      );
+    },
+    read(variables?: TVariables, options?: LoadOptions<TData>): Resource<TData> {
+      return resolveEnvironment(options).readOperation(
+        document,
+        variables ?? ({} as any),
+        options,
+      );
+    },
+  };
 
-  constructor(kind: OperationType, source: string, ast: any, definition: Definition): void {
-    super(kind, source, ast, definition);
-  }
-
-  load(variables?: TVariables, options?: LoadOptions<TData>): Resource<TData> {
-    const environment = resolveEnvironment(options);
-    return environment.execute((this as any), variables ?? ({} as any), options);
-  }
-
-  read(variables?: TVariables, options?: LoadOptions<TData>): Resource<TData> {
-    const environment = resolveEnvironment(options);
-    return environment.readOperation((this as any), variables ?? ({} as any), options);
-  }
+  return Object.freeze(document);
 }
 
-export class GraphQLQueryDocument<TData, TVariables = Variables>
-  extends GraphQLOperationDocument<TData, TVariables>
-  {
-
-  constructor(source: string, ast: any, definition: Definition): void {
-    super("query", source, ast, definition);
-  }
+function createQueryDocument<TData, TVariables = Variables>(
+  source: string,
+  ast: any,
+  definition: Definition,
+): QueryDocument<TData, TVariables> {
+  return (createOperationDocument("query", source, ast, definition) as any);
 }
 
-export class GraphQLMutationDocument<TData, TVariables = Variables>
-  extends GraphQLOperationDocument<TData, TVariables>
-  {
+function createMutationDocument<TData, TVariables = Variables>(
+  source: string,
+  ast: any,
+  definition: Definition,
+): MutationDocument<TData, TVariables> {
+  const operation: any = createOperationDocument("mutation", source, ast, definition);
+  const document = {
+    ...operation,
+    commit(variables?: TVariables, options?: LoadOptions<TData>): Resource<TData> {
+      return operation.load(variables, options);
+    },
+    action(input?: mixed, options?: LoadOptions<TData>): Resource<TData> {
+      return operation.load((actionInputToVariables(input, definition) as any), options);
+    },
+  };
 
-  constructor(source: string, ast: any, definition: Definition): void {
-    super("mutation", source, ast, definition);
-  }
-
-  commit(variables?: TVariables, options?: LoadOptions<TData>): Resource<TData> {
-    return this.load(variables, options);
-  }
-
-  action(input?: mixed, options?: LoadOptions<TData>): Resource<TData> {
-    return this.load((actionInputToVariables(input, this.definition) as any), options);
-  }
+  return (Object.freeze(document) as any);
 }
 
-export class GraphQLSubscriptionDocument<TData, TVariables = Variables>
-  extends GraphQLBaseDocument {
+function createSubscriptionDocument<TData, TVariables = Variables>(
+  source: string,
+  ast: any,
+  definition: Definition,
+): SubscriptionDocument<TData, TVariables> {
+  let document: any;
+  document = {
+    ...createBaseDocument("subscription", source, ast, definition),
+    subscribe(
+      variables: TVariables,
+      sink: SubscribeSink<TData>,
+      options?: SubscribeOptions,
+    ): any {
+      return resolveEnvironment(options).subscribe(document, variables, sink, options);
+    },
+  };
 
-  constructor(source: string, ast: any, definition: Definition): void {
-    super("subscription", source, ast, definition);
-  }
-
-  subscribe(
-    variables: TVariables,
-    sink: SubscribeSink<TData>,
-    options?: SubscribeOptions,
-  ): any {
-    return resolveEnvironment(options).subscribe((this as any), variables, sink, options);
-  }
+  return (Object.freeze(document) as any);
 }
 
 export function resolveFragmentDefinition(
-  owner: GraphQLBaseDocument,
+  owner: RuntimeDocument,
   name: string,
 ): ?Definition {
   return owner._fragments.get(name) ?? fragmentRegistry.get(name) ?? null;
 }
 
 function collectFragmentSpreads(
-  owner: GraphQLBaseDocument,
+  owner: RuntimeDocument,
   selectionSet: any,
   names: Set<string>,
 ): void {
@@ -299,7 +330,7 @@ function collectFragmentSpreads(
   }
 }
 
-export function executableSource(document: GraphQLBaseDocument): string {
+export function executableSource(document: RuntimeDocument): string {
   if (document.kind === "fragment") {
     return print(document.ast);
   }
@@ -326,21 +357,21 @@ function createTypedDocument(source: string, expectedKind?: DocumentKind): AnyDo
   const definition = primaryDefinition(ast, expectedKind);
 
   if (isFragmentDefinition(definition)) {
-    return new GraphQLFragmentDocument(source, ast, definition);
+    return createFragmentDocument(source, ast, definition);
   }
 
   const kind = operationKind(definition);
   if (kind === "query") {
-    return new GraphQLQueryDocument(source, ast, definition);
+    return createQueryDocument(source, ast, definition);
   }
   if (kind === "mutation") {
-    return new GraphQLMutationDocument(source, ast, definition);
+    return createMutationDocument(source, ast, definition);
   }
   if (kind === "subscription") {
-    return new GraphQLSubscriptionDocument(source, ast, definition);
+    return createSubscriptionDocument(source, ast, definition);
   }
 
-  return new GraphQLBaseDocument("document", source, ast, definition);
+  return (createBaseDocument("document", source, ast, definition) as any);
 }
 
 function gqlTag(strings: TaggedTemplateLiteralArray, ...values: Array<mixed>): AnyDocument {

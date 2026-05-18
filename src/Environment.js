@@ -151,56 +151,44 @@ function notifySink<TData>(sink: SubscribeSink<TData>, data: TData): void {
   sink.next?.(data);
 }
 
-export class GeneEnvironment {
-  store: GeneStore;
-  cache: GeneCache;
-  storeCell: Cell<StoreSnapshot>;
-  _fetcher: Fetcher<any, any>;
-  _subscriber: any;
-  _inflight: Map<string, Resource<any>> = new Map();
+function createGeneEnvironment(options?: EnvironmentOptions): EnvironmentInterface {
+  const environmentOptions: EnvironmentOptions = options ?? {};
+  const store: GeneStore = environmentOptions.store ?? createStore({
+    snapshot: environmentOptions.snapshot,
+    identify: environmentOptions.identify,
+  });
+  const cache: GeneCache = createCache(store);
+  const storeCell: Cell<StoreSnapshot> = store.cell;
+  const fetcher = environmentOptions.fetcher ?? createEndpointFetcher(environmentOptions);
+  const subscriber = environmentOptions.subscriber;
+  const inflight: Map<string, Resource<any>> = new Map();
 
-  constructor(options?: EnvironmentOptions): void {
-    const environmentOptions: EnvironmentOptions = options ?? {};
-    this.store = environmentOptions.store ?? createStore({
-      snapshot: environmentOptions.snapshot,
-      identify: environmentOptions.identify,
-    });
-    this.cache = createCache(this.store);
-    this.storeCell = this.store.cell;
-    this._fetcher = environmentOptions.fetcher ?? createEndpointFetcher(environmentOptions);
-    this._subscriber = environmentOptions.subscriber;
-
-    if (environmentOptions.setAsDefault !== false) {
-      setDefaultEnvironment(this);
-    }
-  }
-
-  execute<TData, TVariables>(
+  const execute = <TData, TVariables>(
     operation: OperationDocument<TData, TVariables>,
     variables: TVariables,
     options?: LoadOptions<TData>,
-  ): Resource<TData> {
+  ): Resource<TData> => {
     const fetchPolicy = options?.fetchPolicy ?? (operation.kind === "query" ? "cache-first" : "network-only");
     const normalizedVariables: TVariables = (variables ?? ({} as any));
 
     if (
       operation.kind === "query" &&
       fetchPolicy === "cache-first" &&
-      this.store.hasOperation(operation, (normalizedVariables as any))
+      store.hasOperation(operation, (normalizedVariables as any))
     ) {
       return resolvedResource(
-        (this.store.readOperation(operation, normalizedVariables) as any),
+        (store.readOperation(operation, normalizedVariables) as any),
         { name: `${operation.name} cache hit` },
       );
     }
 
     if (options?.optimisticResponse != null) {
-      this.store.writeOperation(operation, normalizedVariables, options.optimisticResponse);
+      store.writeOperation(operation, normalizedVariables, options.optimisticResponse);
     }
 
     const key = cacheKey(operation, (normalizedVariables as any));
     const shouldDedupe = options?.dedupe ?? operation.kind === "query";
-    const existing = this._inflight.get(key);
+    const existing = inflight.get(key);
     if (shouldDedupe && existing != null) {
       return (existing as any);
     }
@@ -215,15 +203,15 @@ export class GeneEnvironment {
 
     let resource: Resource<TData>;
     const promise = Promise.resolve()
-      .then(() => this._fetcher(context))
+      .then(() => fetcher(context))
       .then(response => {
         const data = unwrapResponse(response);
-        this.store.writeOperation(operation, normalizedVariables, data);
-        return (this.store.readOperation(operation, normalizedVariables) as any);
+        store.writeOperation(operation, normalizedVariables, data);
+        return (store.readOperation(operation, normalizedVariables) as any);
       })
       .finally(() => {
-        if (this._inflight.get(key) === resource) {
-          this._inflight.delete(key);
+        if (inflight.get(key) === resource) {
+          inflight.delete(key);
         }
       });
 
@@ -232,44 +220,44 @@ export class GeneEnvironment {
     });
 
     if (shouldDedupe) {
-      this._inflight.set(key, resource);
+      inflight.set(key, resource);
     }
 
     return resource;
-  }
+  };
 
-  readOperation<TData, TVariables>(
+  const readOperation = <TData, TVariables>(
     operation: OperationDocument<TData, TVariables>,
     variables: TVariables,
     options?: LoadOptions<TData>,
-  ): Resource<TData> {
+  ): Resource<TData> => {
     const normalizedVariables: TVariables = (variables ?? ({} as any));
-    if (this.store.hasOperation(operation, (normalizedVariables as any))) {
+    if (store.hasOperation(operation, (normalizedVariables as any))) {
       return resolvedResource(
-        (this.store.readOperation(operation, normalizedVariables) as any),
+        (store.readOperation(operation, normalizedVariables) as any),
         { name: `${operation.name} read` },
       );
     }
 
-    return this.execute(operation, normalizedVariables, options);
-  }
+    return execute(operation, normalizedVariables, options);
+  };
 
-  readFragment<TData>(
+  const readFragment = <TData>(
     fragment: any,
     ref: mixed,
-  ): Resource<TData> {
-    return resolvedResource(this.store.readFragment(fragment, ref), {
+  ): Resource<TData> => {
+    return resolvedResource(store.readFragment(fragment, ref), {
       name: `${fragment.name} fragment`,
     });
-  }
+  };
 
-  subscribe<TData, TVariables>(
+  const subscribe = <TData, TVariables>(
     operation: SubscriptionDocument<TData, TVariables>,
     variables: TVariables,
     sink: SubscribeSink<TData>,
     options?: SubscribeOptions,
-  ): any {
-    if (this._subscriber == null) {
+  ): any => {
+    if (subscriber == null) {
       throw new Error("This flow-gene environment does not define a subscriber.");
     }
 
@@ -282,11 +270,11 @@ export class GeneEnvironment {
       signal: options?.signal,
     };
 
-    return this._subscriber(context, {
+    return subscriber(context, {
       next: response => {
         const data = unwrapResponse(response);
-        this.store.writeOperation(operation, normalizedVariables, data);
-        notifySink(sink, (this.store.readOperation(operation, normalizedVariables) as any));
+        store.writeOperation(operation, normalizedVariables, data);
+        notifySink(sink, (store.readOperation(operation, normalizedVariables) as any));
       },
       error: error => {
         if (typeof sink !== "function") {
@@ -299,13 +287,30 @@ export class GeneEnvironment {
         }
       },
     });
+  };
+
+  const environment: EnvironmentInterface = {
+    store,
+    cache,
+    storeCell,
+    execute,
+    readOperation,
+    readFragment,
+    subscribe,
+    snapshot: (): StoreSnapshot => store.getSnapshot(),
+  };
+
+  if (environmentOptions.setAsDefault !== false) {
+    setDefaultEnvironment(environment);
   }
 
-  snapshot(): StoreSnapshot {
-    return this.store.getSnapshot();
-  }
+  return Object.freeze(environment);
 }
 
 export function createEnvironment(options: EnvironmentOptions): EnvironmentInterface {
-  return (new GeneEnvironment(options) as any);
+  return createGeneEnvironment(options);
+}
+
+export function GeneEnvironment(options?: EnvironmentOptions): EnvironmentInterface {
+  return createGeneEnvironment(options);
 }
